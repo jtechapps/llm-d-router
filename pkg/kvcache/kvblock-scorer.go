@@ -2,13 +2,9 @@ package kvcache
 
 import (
 	"fmt"
-)
 
-// PodScore couples a pod identifier (IP) with a score.
-type PodScore struct {
-	Name  string
-	Score float64
-}
+	"k8s.io/apimachinery/pkg/util/sets"
+)
 
 // KVScoringStrategy defines the strategy used to score pods for KV cache block reuse.
 type KVScoringStrategy string
@@ -40,8 +36,8 @@ type KVBlockScorer interface {
 	// Strategy returns the scoring strategy type.
 	Strategy() KVScoringStrategy
 	// Score scores the blocks based on the scoring strategy.
-	// TODO: make keyToPods after fixing LMCache.
-	Score(blockKeys []string, keyToPod map[string]string) ([]PodScore, error)
+	// It returns a map of pod names to their scores.
+	Score(blockKeys []string, keyToPods map[string][]string) (map[string]int, error)
 }
 
 // NewKVBlockScorer creates a new KVBlockScorer based on the provided strategy.
@@ -68,41 +64,40 @@ func (s *LongestPrefixScorer) Strategy() KVScoringStrategy {
 }
 
 // Score implements the longest prefix scoring logic.
-func (s *LongestPrefixScorer) Score(blockKeys []string, keyToPod map[string]string) ([]PodScore, error) {
-	longestIndex := make(map[string]int)
+func (s *LongestPrefixScorer) Score(blockKeys []string, keyToPods map[string][]string) (map[string]int, error) {
+	podScores := make(map[string]int)
 
 	if len(blockKeys) == 0 {
-		return nil, nil
+		return podScores, nil
 	}
 
-	prevPod, ok := keyToPod[blockKeys[0]]
-	if !ok {
-		return nil, nil
+	podsForFirstKey := keyToPods[blockKeys[0]]
+	activePods := sets.NewString(podsForFirstKey...)
+
+	// set initial score of 1
+	// pods not in the first key will retain the default score of 0.
+	for _, pod := range podsForFirstKey {
+		podScores[pod] = 1
 	}
-	count := 1
 
 	for i := 1; i < len(blockKeys); i++ {
-		pod, ok := keyToPod[blockKeys[i]]
-		if !ok {
+		if activePods.Len() == 0 {
 			break
 		}
 
-		if pod == prevPod {
-			count++
-		} else {
-			if count > longestIndex[prevPod] {
-				longestIndex[prevPod] = count
-			}
-			prevPod = pod
-			count = 1
+		podsForKey := keyToPods[blockKeys[i]]
+		currentPodsSet := sets.NewString(podsForKey...)
+
+		// update scores and active pods to the intersection
+		activePods = activePods.Intersection(currentPodsSet)
+		for pod := range activePods {
+			// increment score for each pod in the intersection
+			podScores[pod]++
 		}
 	}
 
-	if count > longestIndex[prevPod] {
-		longestIndex[prevPod] = count
-	}
-
-	return convertScoresToPods(longestIndex), nil
+	// Return the map containing the final score for each pod encountered.
+	return podScores, nil
 }
 
 // HighestBlockHitScorer scores based on the highest-indexed block hit for each
@@ -115,18 +110,21 @@ func (s *HighestBlockHitScorer) Strategy() KVScoringStrategy {
 }
 
 // Score implements the highest block hit scoring logic.
-func (s *HighestBlockHitScorer) Score(blockKeys []string, keyToPod map[string]string) ([]PodScore, error) {
-	maxIndex := make(map[string]int)
+func (s *HighestBlockHitScorer) Score(blockKeys []string, keyToPods map[string][]string) (map[string]int, error) {
+	podScores := make(map[string]int)
 
-	for idx, k := range blockKeys {
-		pod, ok := keyToPod[k]
+	for i, k := range blockKeys {
+		pods, ok := keyToPods[k]
 		if !ok {
 			continue
 		}
-		maxIndex[pod] = idx
+
+		for _, pod := range pods {
+			podScores[pod] = i + 1 // +1 to convert from 0-based index to 1-based score
+		}
 	}
 
-	return convertScoresToPods(maxIndex), nil
+	return podScores, nil
 }
 
 // CoverageBasedScorer scores based on total number of blocks hit (coverage).
@@ -138,29 +136,19 @@ func (s *CoverageBasedScorer) Strategy() KVScoringStrategy {
 }
 
 // Score implements the coverage-based scoring logic.
-func (s *CoverageBasedScorer) Score(blockKeys []string, hitmap map[string]string) ([]PodScore, error) {
-	coverage := make(map[string]int)
+func (s *CoverageBasedScorer) Score(blockKeys []string, keyToPods map[string][]string) (map[string]int, error) {
+	podScores := make(map[string]int)
 
 	for _, k := range blockKeys {
-		pod, ok := hitmap[k]
+		pods, ok := keyToPods[k]
 		if !ok {
 			continue
 		}
-		coverage[pod]++
+
+		for _, pod := range pods {
+			podScores[pod]++
+		}
 	}
 
-	return convertScoresToPods(coverage), nil
-}
-
-// convertScoresToPods converts a map of pod name to score into a slice of Pod structs.
-func convertScoresToPods(scoreMap map[string]int) []PodScore {
-	scored := make([]PodScore, 0, len(scoreMap))
-	for pod, score := range scoreMap {
-		scored = append(scored, PodScore{
-			Name:  pod,
-			Score: float64(score),
-		})
-	}
-
-	return scored
+	return podScores, nil
 }

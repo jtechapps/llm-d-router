@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/neuralmagic/distributed-kv-cache/pkg/prefixstore"
+	"github.com/neuralmagic/llm-d-kv-cache-manager/pkg/prefixstore"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"k8s.io/klog/v2"
 
-	"github.com/neuralmagic/distributed-kv-cache/pkg/tokenization"
+	"github.com/neuralmagic/llm-d-kv-cache-manager/pkg/tokenization"
 )
 
 // Config holds the configuration for the Indexer module.
@@ -63,7 +63,10 @@ func NewKVCacheIndexer(config *Config) (*Indexer, error) {
 		return nil, fmt.Errorf("failed to create KVBlockScorer: %w", err)
 	}
 
-	tokenizersPool := tokenization.NewTokenizationPool(config.TokenizersPoolConfig, tokensIndexer)
+	tokenizersPool, err := tokenization.NewTokenizationPool(config.TokenizersPoolConfig, tokensIndexer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tokenizers pool: %w", err)
+	}
 
 	return &Indexer{
 		tokensIndexer:   tokensIndexer,
@@ -85,11 +88,10 @@ func (k *Indexer) Run(ctx context.Context) {
 // If the set of pod identifiers is empty, the function assumes all pods are
 // relevant.
 //
-// The function returns a slice of PodScores (pod identifier and score),
-// where the scores are calculated by the active scoring strategy.
+// The function returns a map of pod identifiers to scores.
 func (k *Indexer) GetPodScores(ctx context.Context, prompt, modelName string,
 	podIdentifiers []string,
-) ([]PodScore, error) {
+) (map[string]int, error) {
 	logger := klog.FromContext(ctx)
 	// 0. add to tokenizers pool
 	k.tokenizersPool.AddTask(prompt, modelName)
@@ -97,6 +99,7 @@ func (k *Indexer) GetPodScores(ctx context.Context, prompt, modelName string,
 	// 1. get available tokens of longest prefix
 	tokens := k.tokensIndexer.FindLongestContainedTokens(prompt, modelName)
 	if len(tokens) == 0 {
+		//nolint:nilnil // no need to return an error
 		return nil, nil
 	}
 

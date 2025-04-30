@@ -10,7 +10,7 @@ import (
 
 	"k8s.io/klog/v2"
 
-	"github.com/neuralmagic/distributed-kv-cache/pkg/utils"
+	"github.com/neuralmagic/llm-d-kv-cache-manager/pkg/utils"
 )
 
 const defaultChunkSize = 256
@@ -51,16 +51,13 @@ type TokenProcessor interface {
 
 // KVBlockKey is equivalent to the LMCacheEngineKey in the Python code.
 type KVBlockKey struct {
-	Fmt       string
 	ModelName string
-	WorldSize int
-	WorkerID  int
 	ChunkHash string
 }
 
 // String returns a string representation of the CacheEngineKey.
 func (c KVBlockKey) String() string {
-	return fmt.Sprintf("%s@%s@%d@%d@%s", c.Fmt, c.ModelName, c.WorldSize, c.WorkerID, c.ChunkHash)
+	return fmt.Sprintf("%s@%s", c.ModelName, c.ChunkHash)
 }
 
 // ChunkedTokenDatabase is a concrete implementation of TokenDatabase.
@@ -97,7 +94,7 @@ func (db *ChunkedTokenDatabase) hash(tokens []uint32, prefixHash string) string 
 	for _, token := range tokens {
 		// convert token to int64 for binary consistency
 		// LittleEndian is important to match the Python code
-		if err := binary.Write(buf, binary.LittleEndian, int64(token)); err != nil {
+		if err := binary.Write(buf, binary.LittleEndian, token); err != nil {
 			klog.FromContext(context.Background()).Error(err, "failed to write token to buffer")
 		}
 	}
@@ -138,10 +135,7 @@ func (db *ChunkedTokenDatabase) TokensToKVBlockKeys(tokens []uint32, modelName s
 
 	return utils.SliceMap(prefixHashes, func(hashVal string) KVBlockKey {
 		return KVBlockKey{
-			Fmt:       db.Fmt,
 			ModelName: modelName,
-			WorldSize: db.WorldSize,
-			WorkerID:  db.WorkerID,
 			ChunkHash: hashVal,
 		}
 	})
