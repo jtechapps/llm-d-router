@@ -91,6 +91,11 @@ type RequestContext struct {
 	ResponseWriter http.ResponseWriter
 }
 
+// MultimodalEntry describes one downloaded multimodal item (e.g. an image) and
+// where it sits in the tokenized prompt. Index is its position in the request's
+// multimodal list. Base64Data and ContentType come from the media download;
+// Hash and KwargsData are filled in by the render step; Placeholder marks the
+// span of placeholder tokens the encode step replaces.
 type MultimodalEntry struct {
 	Index       int
 	Hash        string
@@ -100,6 +105,9 @@ type MultimodalEntry struct {
 	Placeholder PlaceholderRange
 }
 
+// PlaceholderRange is the span of placeholder tokens for one multimodal entry
+// in the tokenized prompt: Offset is the index of the first placeholder token
+// and Length is the number of placeholder tokens.
 type PlaceholderRange struct {
 	Offset int `json:"offset"`
 	Length int `json:"length"`
