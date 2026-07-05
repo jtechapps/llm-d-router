@@ -44,7 +44,11 @@ func (s stubStep) Execute(context.Context, *pipeline.RequestContext) error { ret
 
 func newTestServer(stepErr error) *Server {
 	p := pipeline.New([]pipeline.Step{stubStep{name: "stub", err: stepErr}})
-	return New(config.ServerConfig{}, p)
+	srv, err := New(config.ServerConfig{}, p)
+	if err != nil {
+		panic(err) // default config is always valid
+	}
+	return srv
 }
 
 func postInference(t *testing.T, srv *Server) *httptest.ResponseRecorder {
@@ -128,7 +132,10 @@ func TestHandleInference_BodyOverConfiguredCapMapsTo413(t *testing.T) {
 	// A body larger than server.max_request_body_size (in MB) is rejected before parsing.
 	// Use a 1 MB cap and send 1 MB + 1 byte to trigger the limit.
 	p := pipeline.New([]pipeline.Step{stubStep{name: "stub"}})
-	srv := New(config.ServerConfig{MaxRequestBodySize: 1}, p)
+	srv, err := New(config.ServerConfig{MaxRequestBodySize: 1}, p)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	oversize := strings.Repeat("x", config.BytesPerMB+1)
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(oversize))
 	rec := httptest.NewRecorder()
@@ -138,26 +145,20 @@ func TestHandleInference_BodyOverConfiguredCapMapsTo413(t *testing.T) {
 	}
 }
 
-func TestNew_PanicsOnNegativeMaxRequestBodySize(t *testing.T) {
+func TestNew_RejectsNegativeMaxRequestBodySize(t *testing.T) {
 	p := pipeline.New([]pipeline.Step{stubStep{name: "stub"}})
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic for negative MaxRequestBodySize")
-		}
-	}()
-	New(config.ServerConfig{MaxRequestBodySize: -1}, p)
+	if _, err := New(config.ServerConfig{MaxRequestBodySize: -1}, p); err == nil {
+		t.Fatal("expected error for negative MaxRequestBodySize")
+	}
 }
 
-func TestNew_PanicsOnOverflowMaxRequestBodySize(t *testing.T) {
+func TestNew_RejectsOverflowMaxRequestBodySize(t *testing.T) {
 	// MaxInt64 would cause maxRequestBodySize+1 to overflow to a negative
 	// io.LimitReader limit, making it return immediate EOF.
 	p := pipeline.New([]pipeline.Step{stubStep{name: "stub"}})
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic for MaxRequestBodySize > MaxInt64-1")
-		}
-	}()
-	New(config.ServerConfig{MaxRequestBodySize: math.MaxInt64}, p)
+	if _, err := New(config.ServerConfig{MaxRequestBodySize: math.MaxInt64}, p); err == nil {
+		t.Fatal("expected error for MaxRequestBodySize > MaxInt64-1")
+	}
 }
 
 // deadlineRecorder wraps httptest.ResponseRecorder with a SetWriteDeadline

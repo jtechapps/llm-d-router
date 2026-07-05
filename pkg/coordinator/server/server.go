@@ -84,7 +84,7 @@ type Server struct {
 	maxRequestBodySize int64
 }
 
-func New(cfg config.ServerConfig, p *pipeline.Pipeline) *Server {
+func New(cfg config.ServerConfig, p *pipeline.Pipeline) (*Server, error) {
 	maxBodySize := cfg.MaxRequestBodySize
 	if maxBodySize == 0 {
 		// Zero means unset; Viper fills this from the config default in
@@ -93,13 +93,13 @@ func New(cfg config.ServerConfig, p *pipeline.Pipeline) *Server {
 		maxBodySize = config.DefaultMaxRequestBodySize
 	}
 	if maxBodySize < 0 {
-		panic(fmt.Sprintf("server: MaxRequestBodySize must be positive, got %d", maxBodySize))
+		return nil, fmt.Errorf("server: MaxRequestBodySize must be positive, got %d", maxBodySize)
 	}
 	if maxBodySize > (math.MaxInt64-1)/config.BytesPerMB {
 		// maxRequestBodySize*1024*1024+1 is used as the io.LimitReader sentinel;
 		// an MB value that overflows int64 when converted to bytes would cause
 		// LimitReader to receive a negative limit and return immediate EOF.
-		panic(fmt.Sprintf("server: MaxRequestBodySize must be at most %d MB, got %d", int64((math.MaxInt64-1)/config.BytesPerMB), maxBodySize))
+		return nil, fmt.Errorf("server: MaxRequestBodySize must be at most %d MB, got %d", int64((math.MaxInt64-1)/config.BytesPerMB), maxBodySize)
 	}
 	s := &Server{pipeline: p, maxRequestBodySize: maxBodySize}
 
@@ -121,7 +121,7 @@ func New(cfg config.ServerConfig, p *pipeline.Pipeline) *Server {
 		WriteTimeout: cfg.WriteTimeout,
 	}
 
-	return s
+	return s, nil
 }
 
 func (s *Server) ListenAndServe() error {

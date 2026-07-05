@@ -89,7 +89,11 @@ func main() {
 	}
 
 	p := pipeline.New(steps)
-	srv := server.New(cfg.Server, p)
+	srv, err := server.New(cfg.Server, p)
+	if err != nil {
+		log.Error(err, "failed to create server")
+		os.Exit(1)
+	}
 
 	log.Info("starting coordinator", "addr", cfg.Server.ListenAddr)
 	log.Info("graceful shutdown enabled", "timeout", cfg.Server.ShutdownTimeout)
