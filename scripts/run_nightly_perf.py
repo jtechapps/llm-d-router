@@ -63,7 +63,7 @@ def deploy_simulators(ns, sim_deploy_path, sim_svc_path, replicas=10):
             if "spec" in doc:
                 doc["spec"]["replicas"] = replicas
 
-    temp_deploy = "/tmp/temp-sim-deploy.yaml"
+    temp_deploy = f"/tmp/temp-sim-deploy-{ns}.yaml"
     with open(temp_deploy, "w") as f:
         yaml.safe_dump_all(deploy_docs, f)
 
@@ -78,7 +78,7 @@ def deploy_simulators(ns, sim_deploy_path, sim_svc_path, replicas=10):
             continue
         doc["metadata"]["namespace"] = ns
 
-    temp_svc = "/tmp/temp-sim-svc.yaml"
+    temp_svc = f"/tmp/temp-sim-svc-{ns}.yaml"
     with open(temp_svc, "w") as f:
         yaml.safe_dump_all(svc_docs, f)
 
@@ -214,6 +214,10 @@ def deploy_epp(ns, chart_path, chart_version, router_config_path, epp_cpu="2", e
     
     print("Waiting for EPP deployment to become ready...")
     run_cmd(f"kubectl rollout status deployment/{release_name}-epp -n {ns} --timeout=10m")
+    res_proxy = run_cmd(f"kubectl get deployment {release_name}-proxy -n {ns}", check=False)
+    if res_proxy.returncode == 0:
+        print("Waiting for standalone Envoy proxy deployment to become ready...")
+        run_cmd(f"kubectl rollout status deployment/{release_name}-proxy -n {ns} --timeout=10m")
 
 def get_epp_pod_name(ns, release_name):
     res = run_cmd(f"kubectl get pods -n {ns} -o jsonpath='{{.items[*].metadata.name}}'")
@@ -239,40 +243,46 @@ def get_container_images(ns, pod_name):
 def sample_resources(ns, pod_name):
     # Output of: kubectl top pod <pod> -n <ns> --containers --no-headers
     # Format: <pod>  <container>  <cpu>  <memory>
-    res = run_cmd(f"kubectl top pod {pod_name} -n {ns} --containers --no-headers", check=False)
-    if res.returncode != 0:
-        return None
+    release_name = pod_name.split('-epp')[0]
+    pods_to_sample = [pod_name]
+    res_proxy = run_cmd(f"kubectl get pods -n {ns} -l llm-d-router-proxy={release_name}-proxy -o jsonpath='{{.items[0].metadata.name}}'", check=False)
+    if res_proxy.returncode == 0 and res_proxy.stdout.strip():
+        pods_to_sample.append(res_proxy.stdout.strip())
         
     metrics = {}
     total_cpu = 0
     total_mem = 0
     
-    for line in res.stdout.strip().split('\n'):
-        parts = line.split()
-        if len(parts) < 4:
-            continue
-        container = parts[1]
-        cpu_str = parts[2]
-        mem_str = parts[3]
-        
-        # Parse CPU (e.g. 100m -> 100, or 2 -> 2000)
-        if cpu_str.endswith('m'):
-            cpu = int(cpu_str[:-1])
-        else:
-            cpu = int(float(cpu_str) * 1000)
+    for p in pods_to_sample:
+        res = run_cmd(f"kubectl top pod {p} -n {ns} --containers --no-headers", check=False)
+        if res.returncode != 0:
+            return None
+        for line in res.stdout.strip().split('\n'):
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            container = parts[1]
+            cpu_str = parts[2]
+            mem_str = parts[3]
             
-        # Parse Memory (e.g. 500Mi -> 500)
-        if mem_str.endswith('Mi'):
-            mem = int(mem_str[:-2])
-        elif mem_str.endswith('Gi'):
-            mem = int(float(mem_str[:-2]) * 1024)
-        else:
-            mem = int(mem_str)
+            # Parse CPU (e.g. 100m -> 100, or 2 -> 2000)
+            if cpu_str.endswith('m'):
+                cpu = int(cpu_str[:-1])
+            else:
+                cpu = int(float(cpu_str) * 1000)
+                
+            # Parse Memory (e.g. 500Mi -> 500)
+            if mem_str.endswith('Mi'):
+                mem = int(mem_str[:-2])
+            elif mem_str.endswith('Gi'):
+                mem = int(float(mem_str[:-2]) * 1024)
+            else:
+                mem = int(mem_str)
+                
+            metrics[container] = {'cpu': cpu, 'mem': mem}
+            total_cpu += cpu
+            total_mem += mem
             
-        metrics[container] = {'cpu': cpu, 'mem': mem}
-        total_cpu += cpu
-        total_mem += mem
-        
     metrics['TOTAL'] = {'cpu': total_cpu, 'mem': total_mem}
     return metrics
 
@@ -429,12 +439,16 @@ def run_benchmark(ns, job_values_path, chart_path, release_name):
         job_docs = yaml.safe_load(f)
         
     # Override server url to local namespace service
-    job_docs["config"]["server"]["base_url"] = f"http://{release_name}-epp:80"
+    res_proxy = run_cmd(f"kubectl get svc {release_name}-proxy -n {ns}", check=False)
+    if res_proxy.returncode == 0:
+        job_docs["config"]["server"]["base_url"] = f"http://{release_name}-proxy:80"
+    else:
+        job_docs["config"]["server"]["base_url"] = f"http://{release_name}-epp:80"
     job_docs["token"]["hfSecret"]["name"] = "hf-secret"
     job_docs["token"]["hfSecret"]["key"] = "token"
     job_docs["job"]["serviceAccountName"] = "inference-perf-sa"
 
-    temp_job_values = "/tmp/temp-job-values.yaml"
+    temp_job_values = f"/tmp/temp-job-values-{ns}.yaml"
     with open(temp_job_values, "w") as f:
         yaml.safe_dump(job_docs, f)
 
@@ -455,7 +469,10 @@ def run_benchmark(ns, job_values_path, chart_path, release_name):
         
     print(f"Found benchmark job pod: {job_pod_name}. Waiting for completion...")
     run_cmd(f"kubectl wait --for=condition=complete job/inference-perf-job -n {ns} --timeout=60m")
-    print("Benchmark job completed.")
+    print("Benchmark job completed. Printing summary logs:")
+    res = run_cmd(f"kubectl logs -n {ns} {job_pod_name} --tail=50", check=False)
+    if res.stdout:
+        print(res.stdout)
 
 def cleanup_namespace(ns):
     print(f"Cleaning up namespace: {ns}")
@@ -518,6 +535,7 @@ def main():
     parser.add_argument("--epp-cpu", default="2", help="EPP CPU request (limit will be 2x this amount)")
     parser.add_argument("--epp-memory", default="4Gi", help="EPP memory request (limit will be 2x this amount)")
     parser.add_argument("--router-machine-family", default=None, help="Add node affinity for specific Google Cloud machine-family (e.g. c3)")
+    parser.add_argument("--idle-only", action="store_true", help="Only measure idle resource usage and skip running the active benchmark job")
     args = parser.parse_args()
 
 
@@ -613,24 +631,27 @@ def main():
         else:
             print("Warning: failed to capture idle metrics.")
 
-        # Step 6: Scrape Pre-Benchmark Metrics
-        metrics_before = scrape_scheduler_metrics(ns, pod_name)
+        if not args.idle_only:
+            # Step 6: Scrape Pre-Benchmark Metrics
+            metrics_before = scrape_scheduler_metrics(ns, pod_name)
 
-        # Step 7: Execute Benchmark & Monitor Peak Usage
-        monitoring_thread = Thread(target=monitor_resources_loop, args=(ns, pod_name, 5, peak_metrics))
-        monitoring_thread.start()
+            # Step 7: Execute Benchmark & Monitor Peak Usage
+            monitoring_thread = Thread(target=monitor_resources_loop, args=(ns, pod_name, 5, peak_metrics))
+            monitoring_thread.start()
 
-        try:
-            run_benchmark(ns, args.perf_job, args.perf_chart, release_name)
-        finally:
-            stop_monitoring = True
-            monitoring_thread.join()
+            try:
+                run_benchmark(ns, args.perf_job, args.perf_chart, release_name)
+            finally:
+                stop_monitoring = True
+                monitoring_thread.join()
 
-        # Step 8: Scrape Post-Benchmark Metrics & Compute Latency
-        metrics_after = scrape_scheduler_metrics(ns, pod_name)
-        p50, p95 = calculate_percentiles(metrics_before, metrics_after)
-        print(f"Benchmark latencies: P50 = {p50:.2f} ms, P95 = {p95:.2f} ms")
-        print(f"Peak resource usage: {peak_metrics}")
+            # Step 8: Scrape Post-Benchmark Metrics & Compute Latency
+            metrics_after = scrape_scheduler_metrics(ns, pod_name)
+            p50, p95 = calculate_percentiles(metrics_before, metrics_after)
+            print(f"Benchmark latencies: P50 = {p50:.2f} ms, P95 = {p95:.2f} ms")
+            print(f"Peak resource usage: {peak_metrics}")
+        else:
+            print("Skipping active benchmark execution (--idle-only set).")
 
     except Exception as e:
         print(f"Test run failed with exception: {e}", file=sys.stderr)

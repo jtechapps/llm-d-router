@@ -35,21 +35,22 @@ spec:
         - --max-waiting-queue-length
         - '2048'
         - --inter-token-latency
-        - 1ms
+        - 0.1ms
         - --prefill-time-per-token
-        - 4us
+        - 0.1us
         - --prefill-overhead
         - 5ms
         - --enable-kvcache
         - --enable-prefix-caching
         - --kv-cache-size
-        - '10000000'
+        - '131072'
         - --block-size
         - '16'
-        - --render-timeout
-        - 120s
-        - --mm-render-timeout
-        - 120s
+        - --force-dummy-tokenizer
+        - --max-http-request-body-size
+        - '10485760'
+        - '--v'
+        - '4'
         env:
         - name: POD_NAME
           valueFrom:
@@ -63,6 +64,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
+        - name: GOMEMLIMIT
+          value: 12GiB
+        - name: GOGC
+          value: "50"
         image: us-central1-docker.pkg.dev/jacobmurry-gke-dev/llm-d/llm-d-inference-sim:dev
         imagePullPolicy: IfNotPresent
         livenessProbe:
@@ -89,50 +94,3 @@ spec:
           requests:
             cpu: '16'
             memory: 16Gi
-      initContainers:
-      - args:
-        - launch
-        - render
-        - Qwen/Qwen3-8B
-        - --port=8082
-        - --max-model-len=131072
-        command:
-        - vllm
-        env:
-        - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
-          value: '1'
-        - name: TOKENIZERS_PARALLELISM
-          value: 'true'
-        - name: OMP_NUM_THREADS
-          value: '4'
-        - name: HF_TOKEN
-          valueFrom:
-            secretKeyRef:
-              key: token
-              name: hf-secret
-        image: vllm/vllm-openai-cpu:v0.21.0
-        imagePullPolicy: IfNotPresent
-        livenessProbe:
-          failureThreshold: 10
-          httpGet:
-            path: /health
-            port: 8082
-          initialDelaySeconds: 15
-          periodSeconds: 10
-        name: vllm-render
-        ports:
-        - containerPort: 8082
-          name: http-render
-          protocol: TCP
-        readinessProbe:
-          failureThreshold: 10
-          httpGet:
-            path: /health
-            port: 8082
-          initialDelaySeconds: 10
-          periodSeconds: 5
-        resources:
-          requests:
-            cpu: '4'
-            memory: 8Gi
-        restartPolicy: Always

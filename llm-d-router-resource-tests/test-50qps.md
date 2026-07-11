@@ -1,0 +1,8 @@
+# EPP Router Performance Benchmarking Results: test-50qps
+
+| Timestamp | Namespace | Router Config | Perf Job | Machine Family | Sim Replicas | EPP Images | Container | Idle CPU (m) | Idle Mem (MiB) | Peak CPU (m) | Peak Mem (MiB) | P50 Latency (ms) | P95 Latency (ms) | Status |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-07-10 04:19:40 | llm-d-perf-1783657180 | precise-baseline-1m-prefix | shared_prefix_agentic_precise_qps.yaml | - | 10 | docker.io/envoyproxy/envoy:distroless-v1.33.2<br>ghcr.io/llm-d/llm-d-router-endpoint-picker-dev:main<br>docker.io/vllm/vllm-openai-cpu:v0.21.0 | TOTAL | - | - | 164 | 1102 | 2.01 | 7.77 | SUCCESS |
+| 2026-07-10 04:19:40 | llm-d-perf-1783657180 | precise-baseline-1m-prefix | shared_prefix_agentic_precise_qps.yaml | - | 10 | docker.io/envoyproxy/envoy:distroless-v1.33.2<br>ghcr.io/llm-d/llm-d-router-endpoint-picker-dev:main<br>docker.io/vllm/vllm-openai-cpu:v0.21.0 | envoy-proxy | - | - | 20 | 19 | 2.01 | 7.77 | SUCCESS |
+| 2026-07-10 04:19:40 | llm-d-perf-1783657180 | precise-baseline-1m-prefix | shared_prefix_agentic_precise_qps.yaml | - | 10 | docker.io/envoyproxy/envoy:distroless-v1.33.2<br>ghcr.io/llm-d/llm-d-router-endpoint-picker-dev:main<br>docker.io/vllm/vllm-openai-cpu:v0.21.0 | epp | - | - | 142 | 31 | 2.01 | 7.77 | SUCCESS |
+| 2026-07-10 04:19:40 | llm-d-perf-1783657180 | precise-baseline-1m-prefix | shared_prefix_agentic_precise_qps.yaml | - | 10 | docker.io/envoyproxy/envoy:distroless-v1.33.2<br>ghcr.io/llm-d/llm-d-router-endpoint-picker-dev:main<br>docker.io/vllm/vllm-openai-cpu:v0.21.0 | vllm-render | - | - | 2 | 1052 | 2.01 | 7.77 | SUCCESS |

@@ -1,0 +1,11 @@
+# EPP Router Performance Benchmarking Results: precise-prefix-active3-service
+
+| Timestamp | Namespace | Router Config | Perf Job | Machine Family | Sim Replicas | EPP Images | Container | Idle CPU (m) | Idle Mem (MiB) | Peak CPU (m) | Peak Mem (MiB) | P50 Latency (ms) | P95 Latency (ms) | Status |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-07-10 20:11:47 | perf-pre3-serv-v2 | precise-prefix-active3-service | shared_prefix_job1.yaml | - | 10 | ghcr.io/llm-d/llm-d-router-endpoint-picker-dev:main<br>docker.io/vllm/vllm-openai-cpu:v0.21.0 | TOTAL | 436 | 1049 | 98 | 1051 | 0.00 | 0.00 | SUCCESS |
+| 2026-07-10 20:11:47 | perf-pre3-serv-v2 | precise-prefix-active3-service | shared_prefix_job1.yaml | - | 10 | ghcr.io/llm-d/llm-d-router-endpoint-picker-dev:main<br>docker.io/vllm/vllm-openai-cpu:v0.21.0 | epp | 92 | 23 | 96 | 25 | 0.00 | 0.00 | SUCCESS |
+| 2026-07-10 20:11:47 | perf-pre3-serv-v2 | precise-prefix-active3-service | shared_prefix_job1.yaml | - | 10 | ghcr.io/llm-d/llm-d-router-endpoint-picker-dev:main<br>docker.io/vllm/vllm-openai-cpu:v0.21.0 | vllm-render | 344 | 1026 | 2 | 1026 | 0.00 | 0.00 | SUCCESS |
+| 2026-07-10 20:26:12 | perf-pre3-serv-v3 | precise-prefix-active3-service | shared_prefix_job1.yaml | - | 10 | ghcr.io/llm-d/llm-d-router-endpoint-picker-dev:main<br>docker.io/vllm/vllm-openai-cpu:v0.21.0 | TOTAL | 800 | 954 | 2496 | 1114 | 1.55 | 4.13 | SUCCESS |
+| 2026-07-10 20:26:12 | perf-pre3-serv-v3 | precise-prefix-active3-service | shared_prefix_job1.yaml | - | 10 | ghcr.io/llm-d/llm-d-router-endpoint-picker-dev:main<br>docker.io/vllm/vllm-openai-cpu:v0.21.0 | envoy-proxy | 15 | 18 | 609 | 33 | 1.55 | 4.13 | SUCCESS |
+| 2026-07-10 20:26:12 | perf-pre3-serv-v3 | precise-prefix-active3-service | shared_prefix_job1.yaml | - | 10 | ghcr.io/llm-d/llm-d-router-endpoint-picker-dev:main<br>docker.io/vllm/vllm-openai-cpu:v0.21.0 | epp | 109 | 23 | 1702 | 43 | 1.55 | 4.13 | SUCCESS |
+| 2026-07-10 20:26:12 | perf-pre3-serv-v3 | precise-prefix-active3-service | shared_prefix_job1.yaml | - | 10 | ghcr.io/llm-d/llm-d-router-endpoint-picker-dev:main<br>docker.io/vllm/vllm-openai-cpu:v0.21.0 | vllm-render | 676 | 913 | 395 | 1041 | 1.55 | 4.13 | SUCCESS |

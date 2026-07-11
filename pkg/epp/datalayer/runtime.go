@@ -88,7 +88,8 @@ func NewRuntime(pollingInterval time.Duration) *Runtime {
 func (r *Runtime) Configure(cfg *Config, logger logr.Logger) error {
 	hasPending := len(r.pendingRegistrations) > 0
 	if (cfg == nil || len(cfg.Sources) == 0) && !hasPending {
-		return errors.New("data layer enabled but no data sources configured")
+		logger.Info("No data sources configured; metrics collection is disabled")
+		return nil
 	}
 
 	r.logger = logger

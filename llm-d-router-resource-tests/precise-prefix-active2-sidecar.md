@@ -1,0 +1,8 @@
+# EPP Router Performance Benchmarking Results: precise-prefix-active2-sidecar
+
+| Timestamp | Namespace | Router Config | Perf Job | Machine Family | Sim Replicas | EPP Images | Container | Idle CPU (m) | Idle Mem (MiB) | Peak CPU (m) | Peak Mem (MiB) | P50 Latency (ms) | P95 Latency (ms) | Status |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-07-10 20:55:42 | perf-pre2-side | precise-prefix-active2-sidecar | shared_prefix_job1.yaml | - | 10 | docker.io/envoyproxy/envoy:distroless-v1.33.2<br>ghcr.io/llm-d/llm-d-router-endpoint-picker-dev:main<br>docker.io/vllm/vllm-openai-cpu:v0.21.0 | TOTAL | 737 | 893 | 3227 | 1071 | 1.40 | 2.00 | SUCCESS |
+| 2026-07-10 20:55:42 | perf-pre2-side | precise-prefix-active2-sidecar | shared_prefix_job1.yaml | - | 10 | docker.io/envoyproxy/envoy:distroless-v1.33.2<br>ghcr.io/llm-d/llm-d-router-endpoint-picker-dev:main<br>docker.io/vllm/vllm-openai-cpu:v0.21.0 | envoy-proxy | 17 | 17 | 1287 | 36 | 1.40 | 2.00 | SUCCESS |
+| 2026-07-10 20:55:42 | perf-pre2-side | precise-prefix-active2-sidecar | shared_prefix_job1.yaml | - | 10 | docker.io/envoyproxy/envoy:distroless-v1.33.2<br>ghcr.io/llm-d/llm-d-router-endpoint-picker-dev:main<br>docker.io/vllm/vllm-openai-cpu:v0.21.0 | epp | 130 | 23 | 1738 | 55 | 1.40 | 2.00 | SUCCESS |
+| 2026-07-10 20:55:42 | perf-pre2-side | precise-prefix-active2-sidecar | shared_prefix_job1.yaml | - | 10 | docker.io/envoyproxy/envoy:distroless-v1.33.2<br>ghcr.io/llm-d/llm-d-router-endpoint-picker-dev:main<br>docker.io/vllm/vllm-openai-cpu:v0.21.0 | vllm-render | 589 | 853 | 490 | 987 | 1.40 | 2.00 | SUCCESS |
