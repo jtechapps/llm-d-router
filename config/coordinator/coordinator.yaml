@@ -214,6 +214,10 @@ pipeline:
       #   use_openai_format: true   # see notes above
       #   ec_connector: ec-nixl     # overrides pipeline.ec_connector
       #   kv_connector: kv-nixl     # overrides pipeline.kv_connector
+      #   # Active request migration (see docs/active_request_migration.md).
+      #   # Prefill produces no client output, so only connect retries apply.
+      #   enable_request_migration: true
+      #   max_connect_failures: 3
 
     # -------------------------------------------------------------------
     # decode: streams the completion back to the client. Last step.
@@ -222,3 +226,8 @@ pipeline:
       # params:
       #   use_openai_format: true   # see notes above
       #   kv_connector: kv-nixl     # overrides pipeline.kv_connector
+      #   # Active request migration (see docs/active_request_migration.md).
+      #   enable_request_migration: true
+      #   max_connect_failures: 3      # retries when the worker never streams a token
+      #   max_request_migrations: 2    # mid-stream resumptions after partial output
+      #   max_migratable_tokens: 50000 # cap on prompt + output tokens (0 = no limit)

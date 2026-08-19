@@ -19,6 +19,20 @@ package request
 const (
 	RequestIDHeaderKey = "x-request-id"
 
+	// HeaderExcludeEndpoints is set by the coordinator on a migration retry to
+	// tell the EPP not to schedule the request onto the listed endpoints. The
+	// value is a comma-separated list of "<address>:<port>" entries, matching the
+	// endpoint-subset filter's format. Consumed by the EPP exclude-endpoints
+	// scheduling filter.
+	HeaderExcludeEndpoints = "x-gateway-destination-endpoint-exclude"
+
+	// HeaderDestinationEndpointServed is the response header/metadata key Envoy
+	// uses to report the endpoint that served (or was selected for) a request.
+	// The coordinator reads it from a failed attempt to name the pod to exclude
+	// on retry; it is best-effort, since a pure connect failure carries no
+	// response and therefore no served endpoint.
+	HeaderDestinationEndpointServed = "x-gateway-destination-endpoint-served"
+
 	FieldKVTransferParams     = "kv_transfer_params"
 	FieldECTransferParams     = "ec_transfer_params"
 	FieldMaxOutputTokens      = "max_output_tokens" // Used by Responses API

@@ -41,6 +41,7 @@ type DecodeStep struct {
 	useOpenAIFormat bool
 	gwClient        *gateway.Client
 	kv              kv.Connector
+	migration       migrationConfig
 }
 
 func NewDecodeStep(gwClient *gateway.Client, params map[string]any) (pipeline.Step, error) {
@@ -59,7 +60,11 @@ func NewDecodeStep(gwClient *gateway.Client, params map[string]any) (pipeline.St
 	if err != nil {
 		return nil, fmt.Errorf("decode: %w", err)
 	}
-	return &DecodeStep{useOpenAIFormat: useOpenAI, gwClient: gwClient, kv: kvConn}, nil
+	migration, err := parseMigrationConfig(params)
+	if err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+	return &DecodeStep{useOpenAIFormat: useOpenAI, gwClient: gwClient, kv: kvConn, migration: migration}, nil
 }
 
 func (s *DecodeStep) Name() string { return DecodeStepName }
@@ -70,6 +75,10 @@ func (s *DecodeStep) Execute(ctx context.Context, reqCtx *pipeline.RequestContex
 	s.prepareDecodeBody(ctx, reqCtx)
 
 	logger.V(logutil.DEFAULT).Info("sending request", "path", reqCtx.OriginalPath, "stream", reqCtx.Stream)
+
+	if s.migration.enabled {
+		return s.executeMigrating(ctx, logger, reqCtx)
+	}
 
 	proxyReq, err := newDecodeProxyRequest(ctx, logger, DecodeStepName, reqCtx, s.gwClient, reqCtx.Body, nil)
 	if err != nil {

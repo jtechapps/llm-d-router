@@ -105,18 +105,18 @@ pipeline:
     #    combined worker pod via the gateway / EPP.
     - type: decode
       params:
-        enableRequestMigration: true
-        maxConnectFailures: 3      # retries when the worker never streams a token
-        maxRequestMigrations: 2    # retries after partial output has streamed
-        maxMigratableTokens: 50000 # cap on prompt + output tokens cached for migration
+        enable_request_migration: true
+        max_connect_failures: 3      # retries when the worker never streams a token
+        max_request_migrations: 2    # retries after partial output has streamed
+        max_migratable_tokens: 50000 # cap on prompt + output tokens cached for migration
 ```
 
 | Param | Meaning |
 | :---- | :---- |
-| `enableRequestMigration` | Master switch for failover and mid-stream migration on this step. |
-| `maxConnectFailures` | Maximum retries when the chosen worker never streams a token. `0` returns the error to the client. |
-| `maxRequestMigrations` | Maximum mid-stream migrations after partial output has streamed. `0` preserves existing behavior: the stream error is returned to the client. |
-| `maxMigratableTokens` | Maximum prompt + output tokens cached in the `RequestContext` for a possible migration. Exceeding it terminates the stream. |
+| `enable_request_migration` | Master switch for failover and mid-stream migration on this step. |
+| `max_connect_failures` | Maximum retries when the chosen worker never streams a token. `0` returns the error to the client. |
+| `max_request_migrations` | Maximum mid-stream migrations after partial output has streamed. `0` preserves existing behavior: the stream error is returned to the client. |
+| `max_migratable_tokens` | Maximum prompt + output tokens cached in the `RequestContext` for a possible migration. Exceeding it terminates the stream. `0` means no limit. |
 
 ## Decode stage behavior
 
@@ -125,15 +125,15 @@ The decode step branches on where the failure occurs.
 ```mermaid
 flowchart TD
     Start[decode call to gateway] --> Q1{Streamed any token?}
-    Q1 -->|No, connect failed| C1{maxConnectFailures > 0?}
+    Q1 -->|No, connect failed| C1{max_connect_failures > 0?}
     C1 -->|No| Err1[Return error to client]
-    C1 -->|Yes| C2[Decrement maxConnectFailures<br/>Add exclude-pod header<br/>Re-issue to gateway]
+    C1 -->|Yes| C2[Decrement max_connect_failures<br/>Add exclude-pod header<br/>Re-issue to gateway]
     C2 --> Start
-    Q1 -->|Yes, then dropped| M1{maxRequestMigrations > 0?}
+    Q1 -->|Yes, then dropped| M1{max_request_migrations > 0?}
     M1 -->|No| Err2[Return stream error to client<br/>existing behavior]
-    M1 -->|Yes| M2{Cached tokens <= maxMigratableTokens?}
+    M1 -->|Yes| M2{Cached tokens <= max_migratable_tokens?}
     M2 -->|No| Err3[Terminate stream]
-    M2 -->|Yes| M3[Decrement maxRequestMigrations<br/>Append output tokens to prompt<br/>Adjust max_tokens<br/>Add exclude-pod header<br/>Re-issue to gateway]
+    M2 -->|Yes| M3[Decrement max_request_migrations<br/>Append output tokens to prompt<br/>Adjust max_tokens<br/>Add exclude-pod header<br/>Re-issue to gateway]
     M3 --> Resume[Resume streaming to client]
 ```
 
@@ -141,9 +141,9 @@ flowchart TD
 
 The decode call fails to connect or returns before any token streams.
 
-1. If `maxConnectFailures == 0`, return the error to the client.
+1. If `max_connect_failures == 0`, return the error to the client.
 2. Otherwise, the coordinator sets a header telling the EPP to exclude the failed backend
-   pod from scheduling, and decrements `maxConnectFailures`.
+   pod from scheduling, and decrements `max_connect_failures`.
 3. It sends a fresh request to the gateway endpoint.
 4. On success it continues streaming the response to the client.
 
@@ -162,7 +162,7 @@ sequenceDiagram
     EPP-->>GW: pod A
     GW->>A: forward
     A--xCoord: connect failure (no tokens)
-    Note over Coord: maxConnectFailures > 0<br/>decrement, exclude pod A
+    Note over Coord: max_connect_failures > 0<br/>decrement, exclude pod A
     Coord->>GW: decode call (exclude pod A)
     GW->>EPP: ext_proc: pick pod (A excluded)
     EPP-->>GW: pod B
@@ -175,9 +175,9 @@ sequenceDiagram
 
 The worker crashes or the connection drops after partial output has streamed.
 
-1. If `maxRequestMigrations == 0`, return the stream failure error to the client
+1. If `max_request_migrations == 0`, return the stream failure error to the client
    (existing behavior).
-2. Otherwise, decrement `maxRequestMigrations` and:
+2. Otherwise, decrement `max_request_migrations` and:
    1. Interrupt the SSE chunks to the client (do not emit `[DONE]`).
    2. Record the original token input size and usage in the `RequestContext`.
    3. Mutate the request: append the already-generated output tokens to the input prompt
@@ -200,9 +200,9 @@ sequenceDiagram
     GW->>A: forward
     A-->>Coord: tokens t1, t2, t3
     Coord-->>Client: stream t1, t2, t3
-    Note over Coord: cache t1..t3 in RequestContext<br/>(<= maxMigratableTokens)
+    Note over Coord: cache t1..t3 in RequestContext<br/>(<= max_migratable_tokens)
     A--xCoord: crash mid-stream
-    Note over Coord: maxRequestMigrations > 0<br/>interrupt SSE (no [DONE])<br/>append t1..t3 to prompt<br/>max_tokens = N - 3<br/>exclude pod A
+    Note over Coord: max_request_migrations > 0<br/>interrupt SSE (no [DONE])<br/>append t1..t3 to prompt<br/>max_tokens = N - 3<br/>exclude pod A
     Coord->>GW: decode call (mutated, exclude pod A)
     GW->>B: forward
     B-->>Coord: tokens t4, t5, ...
@@ -216,7 +216,7 @@ sequenceDiagram
   `RequestContext` and is discarded when the request completes.
 - Migration adds memory pressure: output tokens streamed to the client must also be
   cached in the `RequestContext` so they can be replayed into a retry.
-- `maxMigratableTokens` bounds that cache (prompt + output tokens). When it is exceeded,
+- `max_migratable_tokens` bounds that cache (prompt + output tokens). When it is exceeded,
   the stream is terminated rather than migrated.
 - Multiple output choices (`n > 1`) are not supported for request migration. Resumption
   appends the generated output tokens to the prompt of a single continuation, which has no
@@ -253,14 +253,14 @@ pipeline:
         address: "http://rendering-service:8080"
     - type: prefill
       params:
-        enableRequestMigration: true
-        maxConnectFailures: 3      # prefill produces no client output, so only connect retries apply
+        enable_request_migration: true
+        max_connect_failures: 3      # prefill produces no client output, so only connect retries apply
     - type: decode
       params:
-        enableRequestMigration: true
-        maxConnectFailures: 3
-        maxRequestMigrations: 2
-        maxMigratableTokens: 50000
+        enable_request_migration: true
+        max_connect_failures: 3
+        max_request_migrations: 2
+        max_migratable_tokens: 50000
 ```
 
 The three failure points are handled differently because they differ in what state has
@@ -276,7 +276,7 @@ been committed and what the client has already seen.
 
 The prefill call fails to connect or errors before returning `KVTransferParams`. No
 client output has streamed and no KV has been produced, so this is a clean connect-failure
-retry: exclude the failed prefill pod, decrement the prefill step's `maxConnectFailures`,
+retry: exclude the failed prefill pod, decrement the prefill step's `max_connect_failures`,
 and re-issue the prefill call. The decode phase never sees the failure.
 
 ### Decode connect failure

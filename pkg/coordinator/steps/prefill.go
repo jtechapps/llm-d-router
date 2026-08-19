@@ -24,6 +24,7 @@ import (
 	"maps"
 	"net/http"
 
+	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	logutil "github.com/llm-d/llm-d-router/pkg/common/observability/logging"
@@ -47,6 +48,7 @@ type PrefillStep struct {
 	gwClient        *gateway.Client
 	kv              kv.Connector
 	ec              ec.Connector
+	migration       migrationConfig
 }
 
 func NewPrefillStep(gwClient *gateway.Client, params map[string]any) (pipeline.Step, error) {
@@ -73,7 +75,11 @@ func NewPrefillStep(gwClient *gateway.Client, params map[string]any) (pipeline.S
 	if err != nil {
 		return nil, fmt.Errorf("prefill: %w", err)
 	}
-	return &PrefillStep{useOpenAIFormat: useOpenAI, gwClient: gwClient, kv: kvConn, ec: ecConn}, nil
+	migration, err := parseMigrationConfig(params)
+	if err != nil {
+		return nil, fmt.Errorf("prefill: %w", err)
+	}
+	return &PrefillStep{useOpenAIFormat: useOpenAI, gwClient: gwClient, kv: kvConn, ec: ecConn, migration: migration}, nil
 }
 
 func (s *PrefillStep) Name() string { return PrefillStepName }
@@ -105,7 +111,7 @@ func (s *PrefillStep) Execute(ctx context.Context, reqCtx *pipeline.RequestConte
 		v.Info("request body", "method", "POST", "path", path, "bodyLen", len(bodyBytes), "headers", httplog.RedactedHeaders(headers))
 	}
 
-	resp, err := s.gwClient.Post(ctx, path, bodyBytes, headers)
+	resp, err := s.postWithMigration(ctx, logger, path, bodyBytes, headers)
 	if err != nil {
 		return fmt.Errorf("prefill: request: %w", err)
 	}
@@ -125,6 +131,49 @@ func (s *PrefillStep) Execute(ctx context.Context, reqCtx *pipeline.RequestConte
 
 	logger.V(logutil.DEFAULT).Info("complete")
 	return nil
+}
+
+// postWithMigration sends the prefill request, retrying a connect failure or a
+// retryable upstream status on another pod when request migration is enabled.
+// Prefill produces no client output, so only connect-failure retries apply; the
+// caller handles a returned non-retryable or retries-exhausted response as
+// before. Excluding the failed pod is best-effort: a pure connect failure
+// carries no served endpoint.
+func (s *PrefillStep) postWithMigration(ctx context.Context, logger logr.Logger, path string, bodyBytes []byte, headers map[string]string) (*http.Response, error) {
+	if !s.migration.enabled {
+		return s.gwClient.Post(ctx, path, bodyBytes, headers)
+	}
+
+	excluded := &excludedEndpoints{}
+	connectFailuresLeft := s.migration.maxConnectFailures
+	for attempt := 0; ; attempt++ {
+		for k, v := range excluded.header() {
+			headers[k] = v
+		}
+
+		resp, err := s.gwClient.Post(ctx, path, bodyBytes, headers)
+		if err != nil {
+			if connectFailuresLeft > 0 {
+				connectFailuresLeft--
+				logger.V(logutil.DEFAULT).Info("prefill connect failure, retrying",
+					"attempt", attempt, "connectFailuresLeft", connectFailuresLeft, "error", err.Error())
+				continue
+			}
+			return nil, err
+		}
+
+		if isRetryableStatus(resp.StatusCode) && connectFailuresLeft > 0 {
+			served := servedEndpoint(resp.Header)
+			drainClose(resp.Body)
+			connectFailuresLeft--
+			excluded.add(served)
+			logger.V(logutil.DEFAULT).Info("prefill retryable status, retrying",
+				"attempt", attempt, "status", resp.StatusCode, "connectFailuresLeft", connectFailuresLeft, "excluded", served)
+			continue
+		}
+
+		return resp, nil
+	}
 }
 
 func (s *PrefillStep) buildPrefillBody(ctx context.Context, reqCtx *pipeline.RequestContext, features map[string]any, format gateway.RequestFormat) (map[string]any, error) {
